@@ -1,0 +1,196 @@
+---
+title: "Assignment3"
+author: "Tianran Zhang"
+date: "7/7/2020"
+output: 
+  html_document:
+    code_folding: hide
+    theme: readable
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(dplyr)
+library(mice)
+library(ez)
+library(kableExtra)
+```
+
+
+# 1. 
+## Data Description
+We have data on tumor volume (cm3) for a newly classified prostate cancer. The tumors have been detected at an early stage.   
+Correct the variable type and check for missing values:  
+```{r}
+TVolume <- read.csv("TVolume.csv")
+TVolume <- clean_names(TVolume)
+
+TVolume$subject <- as.factor(TVolume$subject)
+TVolume$time_months <- as.factor(TVolume$time_months)
+
+str(TVolume)
+sum(is.na(TVolume))
+```
+There is no missing values in our dataset. Now visulize data and check for normality.
+
+```{r}
+#Visualize data 
+ggplot(data = TVolume) +
+  geom_boxplot(aes(x = time_months, y = tumor_volume, color = time_months)) +
+  theme_bw()
+
+#Normality check
+ggplot(TVolume, aes(sample=tumor_volume, color = time_months)) + 
+  stat_qq() +
+  theme_bw()
+```
+
+Boxplots show that there is an increasing trend in tumor volume as time increases. Q-Q plot shows that the increasing trend seens to be normal.    
+
+## Description of model building   
+In this study, the outcome of interest (tumor volume) is a continuous variable. We have 4 time points for each subject and one treatment. So, I built a model based on single sample repeated measure ANOVA to investigate if the tumor volume is changing over time.   
+$$Y_{ij} = \mu + b_i + \tau_i + e_{ij}$$   
+$Y_{ij} \sim N(\mu + \tau_i, \sigma_b^2 + \sigma_e^2)$: Response for subject i in time j;     
+$\mu$: Overall mean;    
+$b_i \sim N(0, \sigma_b^2)$: Random effect of subject i;    
+$\tau_j, \ \sum_{j = 1}^T\tau_j = 0$: Effect of time j;   
+$e_{ij}\sim N(0, \sigma_e^2)$: Error term.    
+
+## Description of Analysis
+Fit the model described above and take a look at the summary:  
+```{r}
+model1 <- aov(tumor_volume ~ time_months + Error(subject), data = TVolume)
+summary(model1)
+```
+
+There is sufficient evidence that the tumor volume is changing over time (p < 0.001). Next, I will investigate if there is a polynomial trend (a combination of linear trend, quadratic trend, and cubic trend) in tumor volume change using contrasts.    
+Check the contrasts:  
+
+```{r}
+l_cont <- c(-3,-1,1,3)
+q_cont <- c(1,-1,-1,1)
+c_cont <- c(-1,3,-3,1)
+
+mat <- cbind(l_cont, q_cont, c_cont)
+
+contrasts(TVolume$time_months) <- mat
+
+#Double check contrasts
+contrasts(TVolume$time_months)
+```
+
+Investigate if there is any polynomial trend in tumor volume change:   
+```{r}
+#Model
+model1 <- aov(tumor_volume ~ time_months + Error(subject), data = TVolume)
+summary(model1,
+        split = list(time_months = list("Linear" = 1,
+                                       "Quadratic" = 2, 
+                                       "Cubic" = 3)))
+```
+
+Sufficient evidence suggests that tumor size change with a linear trend over time (p < 0.001). However, there is no enough evidence for a quadratic or cubic trend of tumor size changing over time.   
+
+## Conclusion 
+Single sampl repeated measure ANOVA-based analysis showed significant evidence that tumor volume is changing over time. Furthermore, it appears the tumor volume increases with a linear trend as time increases.    
+
+# 2. 
+## Data Description
+A novel ghrelin increasing treatment is being tested in patients with abnormally low serum ghrelin. The patients were divided into two groups; one group received the treatment for four days, and the other received placebo. They were observed for the four days, and their serum ghrelin levels (pmol/liter) were recorded.    
+Load the data and correct the data type. Check if there is any missing values.  
+```{r}
+Ghrelin3 <- read.csv("Ghrelin3.csv")
+Ghrelin3 <- clean_names(Ghrelin3)
+
+Ghrelin3$subject <- as.factor(Ghrelin3$subject)
+Ghrelin3$time_days <- as.factor(Ghrelin3$time_days)
+
+str(Ghrelin3)
+sum(is.na(Ghrelin3))
+```
+
+It appears there is 39 missing values in our dataset. I conducted 10 imputations for missing data with predictive mean matching method.
+```{r, message=F}
+set.seed(135)
+mice_1 <- mice(data= Ghrelin3, #dataset
+               m = 10, #Number of multiple imputations
+               method = "pmm",#Predictive mean matching
+               printFlag = F) 
+
+summary(mice_1)
+
+```
+
+## Description of model building  
+In this study, the outcome of interest (the novel ghrelin) is a continuous variable. We have 4 time points and 2 sample groups. So, I bulit a model based on multiple sample repeated measure ANOVA to test if the treatment is efficacious.   
+$$Y_{ijk} = \mu + \delta_i + \tau_j + b_i(k) + (\delta\tau)_{ij} + e_{ijk}$$
+$Y_{ijk} \sim N(\mu + \delta_i + \tau_j + (\delta\tau)_{ij}, \sigma_b^2 + \sigma_e^2)$: Response for subject k in time j in group i;    
+$\mu$: Overall mean;    
+$\delta_i, \ \sum_{i = 1}^G\delta_i = 0$: Effect of group i;   
+$\tau_j, \ \sum_{j = 1}^T\tau_j = 0$: Effect of time j;     
+$b_{i(k)} \sim N(0, \sigma_b^2)$: Random effect of subject k nested within group i;     
+$(\delta\tau)_{ij}, \ \sum_{i = 1}^G\sum_{j = 1}^T(\delta\tau)_{ij} = 0$: Interaction effect of group & time;     
+$e_{ijk} \sim N(0, \sigma_e^2)$: Error term.       
+
+## Description of data analysis
+Fit the model in all 10 imputed datasets. Combine the 10 results and find average mean squared values. Calculate the F-statistics and the corresponding p-values: 
+
+```{r}
+# Fit the model in all 10 imputed datasets.
+fit1 <- with(data = mice_1, exp = aov(ghrelin ~ (time_days * treatment) +
+                                        Error(subject)))
+df1 <- as.data.frame(summary(fit1))
+
+# Combine the results over all 10 imputed datasets and find average mean squared values 
+
+#Treatment 
+avg_meansq_tx <- df1 %>% 
+  filter(term == 'treatment') %>% 
+  summarize(mean = mean(meansq)) 
+
+avg_meansq_residuals_1 <- df1 %>% 
+  filter(term == 'Residuals' & stratum == 'subject') %>% 
+  summarize(mean = mean(meansq)) 
+
+#Timepoint 
+avg_meansq_tp <- df1 %>% 
+  filter(term == 'time_days') %>% 
+  summarize(mean = mean(meansq)) 
+
+avg_meansq_residuals_2 <- df1 %>% 
+  filter(term == 'Residuals' & stratum == 'Within') %>% 
+  summarize(mean = mean(meansq)) 
+
+#Interaction Between Timepoint + Treatment 
+avg_meansq_tx_tp <- df1 %>% 
+  filter(term == 'time_days:treatment') %>% 
+  summarize(mean = mean(meansq))
+
+# Calculate F-Statistic
+f_tx <- as.numeric(avg_meansq_tx/avg_meansq_residuals_1)
+f_tp <- as.numeric(avg_meansq_tp/avg_meansq_residuals_2)
+f_txtp <- as.numeric(avg_meansq_tx_tp/avg_meansq_residuals_2)
+
+#Calculate p-values 
+ans <- data.frame(1 - pf(f_tx, 1, 110),
+                  1 - pf(f_tp, 3, 330),
+                  1 - pf(f_txtp, 3, 330))
+
+colnames(ans) = c("treatment", "time_days", "treatment:time_days")
+ans %>%
+  kable() %>%
+  kable_styling()
+```
+
+There is no sufficient evidence that treatment has a significant effect on leptin levels (p = 0.43). No sufficient evidence suggests that ghrelin levels change over time, regardless of treatment (p =0.29), and there is no sufficient evidence supports that leptin levels change over time differs between 2 treatment groups (p = 0.67).  
+
+## Summary
+Predictive mean matching method was conducted to impute 39 missing values for 10 times. Repeated measure ANOVA-based analysis on 10 imputed datasets showed that neither treatment or time has any significant effects on leptin levels. Furthermore, there is no significant interaction effect between treatment and days on leptin levels. It appears this treatment is not efficacious.   
+

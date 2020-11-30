@@ -1,0 +1,188 @@
+---
+title: "Assignment2"
+author: "Tianran Zhang"
+date: "6/4/2020"
+output: 
+  html_document:
+    code_folding: hide
+    theme: readable
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+library(readr)
+library(janitor) 
+library(lmerTest)
+library(ggplot2)
+library(coxme)
+```
+
+**1. Some early stage pancreatic cancer patients went through one of two early treatment procedures: Whipple Procedure or Distal Pancreatectomy. The patients were kept under monthly surveillance for further progression of the disease. If the disease progressed, the time between the treatment and progression was recorded as the follow up time. Moreover, there are also data on each patient’s age at treatment, and the cancer center where the procedure was performed. Perform an appropriate analysis to understand variables associated with progression.** 
+
+## EDA
+```{r}
+progression <- read.csv("progression.csv")
+progression <- clean_names(progression)
+
+# check if any NAs
+sum(is.na(progression))
+
+# check the dataset structure
+str(progression)
+
+# correct variable types
+factor.id <- c("center", "treatment", "subject")
+progression[, factor.id] <- lapply(progression[, factor.id],
+                                   as.factor)
+
+# take a look at the dataset
+head(progression)
+```
+
+There is no missing values in our dataset. 
+
+## Description of model buildig    
+I fitted Cox regression models with mixed effects on the dataset. The outcome is survival function of patient's follow up time; the fixed effects are age and treatment; the random effect is the medical center. I also considered the protential interaction effect between treatment and age.      
+
+Simpler model:
+$$h_{ij}(t) = h_0(t)exp(\beta_1I[X_{treatment[i,j]} = Whipple] + \beta_2X_{age[i, j]} +  a_i)$$   
+
+Model with interaction term:   
+
+$$h_{ij}(t) = h_0(t)exp(\beta_1I[X_{treatment[i,j]} = Whipple] + \beta_2X_{age[i, j]} + \beta_3[X_{treatment[i,j]} = Whipple] * X_{age[i, j]} + a_i)$$
+
+
+$h_{ij}(t)$: Hazard at time t for subject j at center i;   
+$h_0(t)$: Baseline hazard at time t;   
+$\beta_1$: Fixed main effect of Whipple procedure compared to Distal pancreatectomy;   
+$\beta_2$: Fixed main effect of age;  
+$\beta_3$: Fixed effect of interaction term between age and treatment;   
+$a_i \sim B(0, \sigma_a^2)$: Random effect of center i.    
+
+I fitted these two models and compare them using anova test. 
+```{r}
+# Model Building 
+a <- coxme(Surv(follow_up_time_months, progression) ~ age + 
+             treatment + (1|center), data = progression)
+
+# Interaction term
+b <- coxme(Surv(follow_up_time_months, progression) ~ age + 
+             treatment + age * treatment + (1|center), 
+           data = progression)
+
+anova(a, b)
+```
+
+There is no significant difference between these two models since the p-value is greater than 0.05. So, I chose the less complex model.    
+
+
+## Description of analysis
+Take a look at the regression summary:
+```{r}
+summary(a)
+```
+
+Fitted model:
+$$\hat{h}_{ij}(t) = h_0(t)exp(-0.043I[X_{treatment[i,j]} = Whipple] + 0.006X_{age[i, j]} +  a_i)$$
+$h_{ij}(t)$: Hazard at time t for subject j at center i;   
+$h_0(t)$: Baseline hazard at time t;   
+$\hat{a_i} \sim N(0, 0.203)$.    
+
+At a 5% significance level, the fixed effects of age and treatment are both not significant (with p-values greater than 0.05). The variance of the random effects is 0.203. 
+
+## Conclusions
+We were interested in understanding variables associated with progression. At a 0.05 significant level, the fixed effects of age and treatment are not associated with the time to progression (p-values > 0.05). It seems only the random effect of center is associated with time to progression.  
+
+**2.A group of subjects went through phases of normal or late sleep. Their BMI and appetite Increase (1=”Yes”, 0=”No”) were recorded. Perform an appropriate analysis to determine if late sleep is associated with increase in appetite.**    
+
+## EDA
+
+```{r}
+sleep24ap <- read.csv("sleep24ap.csv")
+
+sum(is.na(sleep24ap))
+
+str(sleep24ap)
+factor.id <- c("Subject", "SLEEP", "AppIn")
+sleep24ap[, factor.id] <- lapply(sleep24ap[, factor.id], as.factor)
+
+head(sleep24ap)
+```
+
+There is no missing value in the dataset.  
+
+## Description of model building
+The goal is to determine if late sleep is associated with increase in appetite. Since the appetite increase is a binary variable, I fitted GLM regression model with mixed effects and logit link function. People's appetite increase is the outcome variable; BMI and Sleep are fixed effects; subject is the random effect. Protential interaction effect between sleep and bmi is also considered.   
+
+
+Simpler model: 
+$$logit(p_{ij}) = a + b_i + \beta_1I[X_{Sleep[ij]} = Normal] + \beta_2X_{bmi[ij]}$$
+
+Model with interaction term:  
+$$logit(p_{i}) = a + b_i + \beta_1I[X_{Sleep[ij]} = Normal] + \beta_2X_{bmi[ij]} +\\ \beta_3I[X_{Sleep[ij]} = Normal] * X_{bmi[ij]}$$
+$p_{ij}$: Probability of Subject i in phase j having appetite increase;    
+$a$: Overall mean; 
+$b_i$: Random effect of Subject i;   
+$\beta_1$: Fixed main effect of normal sleep compared to late sleep;   
+$\beta_2$: Fixed main effect of bmi;     
+$\beta_3$: Fixed main effect of the interaction between bmi and sleeping;    
+
+I fitted these two models and compare them using anova test.  
+
+```{r}
+# fit the model
+d <- glmer(AppIn ~ SLEEP + BMI + (1|Subject), family = binomial(link = "logit"), data = sleep24ap)
+
+# consider interaction term
+e <- glmer(AppIn ~ SLEEP + BMI + SLEEP * BMI + (1|Subject), family = binomial(link = "logit"), data = sleep24ap)
+
+# Compare the two models
+anova(d, e)
+```
+
+There is no significant difference between these two modes since p-value is greater than 0.05. I chose the less complex model without interaction term.    
+
+Take a look at the result summary
+```{r}
+#Look at results of model
+summary(d)
+```
+
+At a significance level of 0.05, there is no significant fix effects in our model since all p-values are greater than 0.05. Besides, the variance of subject is 0, it seems we do not need to add the random effect. Thus, I removed the random effect:
+
+$$logit(p_{ij}) = a + \beta_1I[X_{Sleep[ij]} = Normal] + \beta_2X_{bmi[ij]}$$
+
+$p_{ij}$: Probability of Subject i in phase j having appetite increase;    
+$a$: Overall mean;      
+$\beta_1$: Fixed main effect of normal sleep compared to late sleep;   
+$\beta_2$: Fixed main effect of bmi;     
+
+Take a look at the regression result. 
+```{r}
+f <- glm(AppIn ~ SLEEP + BMI, family = binomial(link = "logit"),
+          data = sleep24ap)
+summary(f)
+```
+
+
+## Description of analysis
+Take a look at the regression summary: 
+```{r}
+summary(f)
+```
+Fitted Model:   
+$$logit(\hat{p}_{ij}) = 2.72 -1.04I[X_{Sleep[ij]} = Normal] -0.07X_{bmi[ij]}$$
+$p_{ij}$: Probability of Subject i at phase j having appetite increase;    
+
+
+At a significance level of 0.05, there is no significant fix effects in our model since all p-values are greater than 0.05.    
+
+## Conclusion
+
+We were interested in determining if late sleep is associated with the increase in appetite. A GLMM model with mixed effects was conducted to estimate the fixed effect of sleep and bmi on the increase in appetite. At the 5% significance level, there was no statistically significant association between increase in appetite and sleep as well as bmi (p values >0.05). There is also no random effect of subject since the variance is 0.   
+
+

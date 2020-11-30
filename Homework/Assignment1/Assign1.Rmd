@@ -1,0 +1,236 @@
+---
+title: "Assignment1"
+author: "Tianran Zhang"
+date: "5/24/2020"
+output:
+  html_document:
+    toc: yes
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+library(lmerTest)
+library(ggplot2)
+
+library(coxme)
+
+library(janitor) # Clean names
+setwd("/Users/zhangtianran/Desktop/TERM3/HierModeling_Longitudinal_Data/Homework/Assignment1/")
+```
+
+
+## 1. 
+**Coronary bypass surgery is a major surgical procedure that is often performed on older adults with heart conditions. Recovery time from the surgery varies, and is potentially associated with age. The state regulations and hospital practices on the procedure also vary, and may affect the recovery time.**
+ 
+### EDA 
+Take a look at the data
+```{r}
+recovery <- read.csv("recovery.csv")
+
+# Clean the column name of the data
+recovery <- clean_names(recovery)
+
+# Look at the structure of the data
+str(recovery)
+
+# Correct variable types 
+recovery$paitent_id <- as.factor(recovery$paitent_id)
+
+#Any missing data or outliers 
+sum(is.na(recovery))
+boxplot(recovery$recovery_time_days, ylab = "recovery time", 
+        main = "Distribution of recovery time")
+```
+
+There is no missing values but three outliers in our dataset.  
+
+```{r}
+# Plot data
+ggplot(data = recovery) +
+  geom_point(aes(x = recovery_time_days, y = age_years, col = state)) +
+  ggtitle("Scatter plot of age versus recovery time") + 
+  theme_bw()
+```
+
+The scatter plot above shows no clear trends between recovery time and age. 
+
+### Description of Model building
+The outcome of interest is the recovery time from the Coronary bypass surgery (days). It is potentially associated with age. The state regulations and hospital practices on the procedure also vary, and may affect the recovery time. So, In the model, I set age as the fixed effect, state as a random effect, and hospital as a random effect nested with state. 
+$$Y_{ijk} = \beta_0 + \beta_1Age_{ijk} + a_j + b_{j(k)} + \epsilon_{ijk}$$ 
+Where $Y_{ijk}$ represents the recovery time of patient i in hospital k, state j;   
+$\beta_0$ represents the overall mean;
+$\beta_1$ represents the fixed effect of age for patient i in hospital k, state j;  
+$a_j\sim N(0, \sigma_a^2)$ represents the random effect of state j;   
+$b_{j(k)}\sim N(0, \sigma_b^2)$ represents the random effect of hospital k nested within state j;   
+$\epsilon_{ijk} \sim N(0, \sigma_e^2)$ represents error term for patient i in hospital k, state j.       
+
+Now fit this model and check for model assumptions.  
+
+```{r}
+# Model with fixed effect of age, random effect of state, and random effect of hospital nested with state.
+a <- lmer(recovery_time_days ~ age_years + (1|state) + (1|state: hospital),
+          data = recovery)
+
+
+#Check the normality of random effects
+reffects <- unlist(ranef(a))
+qqnorm(reffects)
+qqline(reffects)
+
+# Check model assumptions:
+par(mfrow = c(2, 2))
+qqnorm(resid(a))
+qqline(resid(a))
+
+plot(density(resid(a)))
+abline(v = 0, lty = 3)
+
+# Homoskedasticity
+plot(resid(a))
+abline(h = 0)
+# Outliers
+plot(sort(resid(a)))
+
+shapiro.test(resid(a))
+```
+
+The qqplot for random effect looks good. Residuals seems randomly distributed. No extreme residual outliers seen in last plot. Shapiro test does show strong significance for non-normality (p = 0.2).  
+
+### Description of analyses
+Take a look at the summary of the fitted model.
+```{r}
+summary(a)
+```
+Fitted model: 
+$$Y_{ijk} = 52.325 + 0.126Age_{ijk} + a_j + b_{j(k)} + \epsilon_{ijk}$$ 
+Where $Y_{ijk}$ represents the recovery time of patient i in hospital k, state j;   
+$a_j\sim N(0, 0)$;       
+$b_{j(k)}\sim N(0, 0)$;   
+$\epsilon_{ijk} \sim N(0, 46.4)$.       
+At the 5% significance level, there was no statistically significant association between age and recovery time (p = 0.42).    
+The variances of the random effect of state and hospital are both 0. It seems like we do not need to use the random effect model. So, I tried the linear model with only fixed effect. 
+$$Y_i = \beta_0 + \beta_1Age_i + \epsilon_i$$
+Where $Y_{i}$ represents the recovery time of patient i;   
+$\beta_0$ represents the intercept;   
+$\beta_1$ represents the fixed effect of age for patient i (slope);     
+$\epsilon_{ijk} \sim N(0, \sigma_e^2)$ represents the error term.     
+      
+```{r}
+a_lm <- lm(recovery_time_days ~ age_years, data = recovery)
+
+# Compare the two models
+anova(a, a_lm)
+
+summary(a_lm)
+```
+
+It seems there is no significant difference between these two models(p = 1). The fitted model is: $Y_i = 52.325 + 0.126Age_i$. At the 5% significance level, there was no statistically significant association between age and recovery time (p = 0.42).     
+
+### Conclusions
+We were interested in looking at the effect of age on recovery time from the surgery after controlling for the variation in hospital and state. Linear mix effect regression model with age as the fixed effect, state and hospital nested within state are the random effects was conducted to estimate the effect of age on recovery time. ANOVA comparisons were used in model selection. Linear regression model with only fixed effect is also conducted. The two models do not have significant difference. At the 5% significance level, there was no statistically significant association between age and recovery time (p = 0.42).      
+
+
+## 2. 
+**Some Type II Diabetes patients are going through negative life changes, which is likely to raise their blood sugar level.**
+
+### EDA
+
+```{r}
+a1cq <- read.csv("A1Cq.csv")
+
+# Look at the structure of the data
+# str(a1cq)
+
+# Correct variable types
+a1cq$Patient <- factor(a1cq$Patient)
+# head(a1cq)
+```
+
+```{r}
+#Any missing data or outliers 
+sum(is.na(a1cq))
+boxplot(a1cq$A1C, ylab = "A1CQ", main = "Distribution of A1CQ")
+
+# Visualize Data 
+ggplot(data = a1cq, aes(x = Time, y = A1C, group = Patient, 
+                        color = Patient)) + 
+  geom_line() +
+  ggtitle("A1C Level")
+  theme_bw()
+```
+
+There is no missing values or obvious outlier in the dataset.
+
+### Description of model building
+The goal is to investigate the quadratic growth of blood sugar level over months as the patients go through negative life changes. The state regulations and hospital practices on the procedure also vary, and may affect the recovery time. So I set time and quadratic time as fixed effect, and patient as the random effect. 
+$$Y_{ij} = a_i + b_iTime_{ij} + c_iTime_{ij}^2 + \epsilon_{ijk}$$ 
+Where $Y_{ij}$ represents the blood sugar level of patient i at time $Time_{ij}$;      
+$a_i\sim N(\mu_a, \sigma_a^2)$ represents the random intercept of patient i;   
+$b_i\sim N(\mu_b, \sigma_b^2)$ represents the random slope of patient i;   
+$c_i\sim N(\mu_c, \sigma_c^2)$ represents the random quadratic slope of patient i;    
+$\epsilon_{ijk} \sim N(0, \sigma_e^2)$ represents error term.        
+
+Now fit this model and check for model assumptions.  
+
+```{r}
+a1cq$Time_2 <- a1cq$Time^2
+
+# Build a quadratic growth model based using random effects.
+# Regression model with time and time square as random slopes, without random intercept
+b <- lmer(A1C ~ 1 + Time + Time_2 + (1|Patient) + (0 + Time|Patient) + (0 + Time_2|Patient), data = a1cq)
+# Regression model with time and time square as random slopes, with random intercept
+b1 <- lmer(A1C ~ 1 + Time + Time_2 + (1|Patient) + (1 + Time|Patient) + (1 + Time_2|Patient), data = a1cq)
+anova(b, b1)
+```
+
+It seems like model b is better than model b1 with a lower AIC of -48.6.  
+
+
+```{r}
+# Check for normality of the random effects
+reffects <- unlist(ranef(b))
+qqnorm(reffects)
+qqline(reffects)
+
+par(mfrow = c(2, 2))
+# Check model assumptions:
+qqnorm(resid(b))
+qqline(resid(b))
+
+plot(density(resid(b)))
+abline(v = 0, lty = 3)
+
+# Homoskedasticity
+plot(resid(b))
+abline(h = 0)
+# Outliers
+plot(sort(resid(b)))
+
+shapiro.test(resid(b))
+```
+
+Random effects look not normally distributed. Residuals look randomly distributed. No extreme residual outliers seen in last plot. Shapiro test does show strong significance for non-normality (p = 0.8). 
+
+### Description of analyses
+Take a look at the summary of the fitted model.
+```{r}
+summary(b)
+```
+Fitted model: 
+$$Y_{ij} = a_i + b_iTime_{ij} + c_iTime_{ij}^2 + \epsilon_{ijk}$$
+Where $Y_{ij}$ represents the blood sugar level of patient i at time $Time_{ij}$;      
+$a_i\sim N(7.73, 0.0182)$;   
+$b_i\sim N(0.0378, 3.94*10^{-6})$;   
+$c_i\sim N(-4.53 * 10^{-4}, 0)$;    
+$\epsilon_{ijk} \sim N(0, \sigma_e^2)$.        
+      
+At the 5% significance level, there was statistically significant association between a1c level and time as well as quadratic time (p < 0.001).    
+
+
+### Conclusion
+We were interested in looking at the changes in blood sugar level for some Type II diabetes patients who went through some negative life changes. A random effects model was used to estimate the effect of time on a1c level. A1C was modeled with the fixed effect of time and quadratic time, and random effect of patient. We found that at the 5% significance level, there was statistically significant association between a1c level and time, quadratic time after the negative life changes (p < 0.001).
+
+
+

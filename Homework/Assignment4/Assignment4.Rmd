@@ -1,0 +1,190 @@
+---
+title: "Assignment4"
+author: "Tianran Zhang"
+date: "7/21/2020"
+output:
+  html_document:
+    code_folding: hide
+    theme: readable
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+  word_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+
+library(ggplot2)
+library(lmerTest)
+library(dplyr)
+```
+
+# 1. 
+
+## Data Description
+We have data on viral load for the first few weeks of infection for a certain infectious disease. An antiviral treatment “Titexatine” has been effective in other similar viral diseases before. Some of these patients were given this treatment, and some received a placebo.   
+```{r}
+dat1 <- read.csv("Viral Load.csv")
+sum(is.na(dat1))
+str(dat1)
+dat1$Subject <- as.factor(dat1$Subject)
+dat1$Treatment <- as.factor(dat1$Treatment)
+```
+
+There is no missing values in our dataset.
+
+## Description of model building
+I will perform an appropriate linear model analysis to investigate if Titexatine changes viral load for a certain infectious disease over the first few weeks.     
+First visualize the viral level over time for each subject.  
+```{r}
+#Visualize Subjects Over Time 
+
+dat1 %>% 
+  ggplot(aes(x = Week, 
+             y = ViralLoad, 
+             color = factor(Subject), 
+             group = Subject)) + 
+  geom_line() +  # individual trajectory
+  geom_smooth(aes(group = 1), method = "lm") +  # overall trend line
+  theme_bw() +
+  #facet_wrap(~Treatment) +
+  theme(legend.position = "none")
+```
+
+It seems there is a linear trend in Titexatine changes over time for each subject in both placebo and titexatine. There are 4 time points and two treatment groups: Titexatine group and placebo group. So, I choose to fit a linear mixed effect model with random intercept and slope to perform longitudinal data analysis. Time and treatment and their interaction term are considered as fixed effect.            
+Statistical model:    
+$$Y_{ijk} = a + \delta t_{ijk} + a_{i(j)} + d_{i(j)}t_{ijk} + \lambda 1_{[Titexatine]i} + \phi t_{ijk} 1_{[Titexatine]i} + e_{ijk}$$  
+$Y_{ijk}$: Viral level for treatment i, subject j in time k;   
+$a$: Fixed intercept;  
+$\delta$: Fixed slope;   
+$a_{i(j)}$: Random subject-specific intercept (nested within treatment);    
+$d_{i(j)}$: Random subject-specific slope (nested within treatment);    
+$\lambda$: Main effect of Titexatine;     
+$\phi$: Interaction effect of time and Titexatine;     
+$e_{ijk}\sim N(0, \sigma_e^2)$: Error term.     
+
+## Description of analysis
+```{r}
+a <- lmer(ViralLoad ~ Week * Treatment + 
+            (1 + Week|Treatment:Subject),  
+          data = dat1)
+```
+
+
+```{r}
+#Check Model Assumptions 
+
+#Check normality, homoskedasticity, and for potential outliers of model residuals.
+#Normality
+par(mfrow = c(2,2)) #Make the plot screen into 4 parts
+qqnorm(resid(a)) #Display the 1st plot of the actual response values v the estimated values
+qqline(resid(a)) #Makes the expected line of values
+plot(density(resid(a))) #Display 2nd plot of distribution of residuals
+abline(v=0,lty=3) #Dotted line on the mean=0
+#Homoskedasticity
+plot(resid(a)) #Display 3rd plot as the distribution of the residuals
+abline(h=0) #Straight line along resid=0
+#Outliers
+plot(sort(resid(a))) #Display 4th 
+
+```
+
+Check Model Assumptions: According to the Q-Q plot and density plot, the residuals are normally distributed with equal variance. The residuals are randomly distributed and no obvious outliers. It appears the normality and equal variance assumptions are not violated. Next take a look at the regression summary:         
+
+```{r}
+summary(a)
+```
+
+The variances of the random effect are all greater then 0. For fixed effect, Viral load is significantly associated time controlling for treatment (p < 0.01). Treatment does not have a significant effect on viral load over time (p = 0.671). Moreover, treatment does not have a significant impact on the growth of viral load over time (p = 0.876).    
+
+## Conclusion  
+
+Linear mixed model was conducted to investigate if Titexatine changes viral load over the first few weeks. It appears at a 0.05 significance level, there is no sufficient evidence to support that Titexatine have a significant effect on viral load over time (p = 0.671). Besides, treatment does not have a significant impact on the growth of viral load over time (p = 0.876).      
+
+# 2. 
+
+## Data Description
+We are investigating comparative effectiveness of two interventions that are designed to facilitate physical activity in older women who were diagnosed with a certain degenerative disease. The women were divided into two Groups: A & B; each group received one of the interventions. I have the data on weekly physical activity levels for first few years.     
+```{r}
+dat2 <- read.csv("AvgWeeklyPA.csv")
+sum(is.na(dat2))
+str(dat2)
+dat2$Subject <- as.factor(dat2$Subject)
+```
+
+There is no missing values in our dataset. 
+
+## Description of model building
+I will perform an appropriate linear model analysis to investigate if the interventions are differentially changing the physical activity levels. Not visualize the weekly physical activity levels over time for each subject:    
+```{r}
+#Visualize Subjects Over Time 
+dat2 %>% 
+  ggplot(aes(x = Year, 
+             y = AvgWkPA, 
+             color = factor(Subject), 
+             group = Subject)) + 
+  geom_line() +  # individual trajectory
+  geom_smooth(aes(group = 1), method = "lm") +  # overall trend line
+  theme_bw() +
+  #facet_wrap(~Intervention) +
+  theme(legend.position = "none")
+```
+ 
+It seems there is a quadratic trend in weekly physical activity levels over years. There are 6 time points and two treatment groups. Thus, a linear mixed model with quadratic trend would be conducted for longitudinal analysis.    
+Statistical model:   
+$$Y_{ijk} = a + \delta_1 t_{ijk} + \delta_2 t^2_{ijk} + d_{i(j)0} + d_{i(j)1}t_{ijk} + d_{i(j)2}t^2_{ijk} +  \lambda_0 1_{[B]i} + \lambda_1 t_{ijk} 1_{[B]i} + \lambda_2 t^2_{ijk} 1_{[B]i} + e_{ijk}$$  
+$Y_{ijk}$: Weekly physical activity levels for treatment i, subject j in time k;   
+$a$: Fixed intercept;  
+$\delta_0, \delta_1, \delta_2$: Fixed coefficients of time;   
+$d_{i(j)0}, d_{i(j)1}, d_{i(j)2}$: Random subject-specific coefficients of time nested within treatment group;       
+$\lambda_0$: Main effect of treatment B;     
+$\lambda_1$: Interaction effect of time and treatment B;     
+$\lambda_2$: Interaction effect of time$^2$ and treatment B;        
+$e_{ijk}\sim N(0, \sigma_e^2)$: Error term.     
+
+## Description of analysis
+```{r}
+b <- lmer(AvgWkPA ~ Year + 
+            Intervention +
+            I(Year^2) + 
+            Year:Intervention + 
+            I(Year^2):Intervention +
+            (Year + I(Year^2)|Subject) , 
+          data = dat2)
+```
+
+```{r}
+#Check Model Assumptions 
+
+#Check normality, homoskedasticity, and for potential outliers of model residuals.
+#Normality
+par(mfrow = c(2,2)) #Make the plot screen into 4 parts
+qqnorm(resid(b)) #Display the 1st plot of the actual response values v the estimated values
+qqline(resid(b)) #Makes the expected line of values
+plot(density(resid(b))) #Display 2nd plot of distribution of residuals
+abline(v=0,lty=3) #Dotted line on the mean=0
+#Homoskedasticity
+plot(resid(b)) #Display 3rd plot as the distribution of the residuals
+abline(h=0) #Straight line along resid=0
+#Outliers
+plot(sort(resid(b))) #Display 4th 
+
+```
+
+Check Model Assumptions: According to the Q-Q plot and density plot, the residuals are normally distributed with equal variance. The residuals are randomly distributed and no obvious outliers. It appears the normality and equal variance assumptions are not violated. Next take a look at the regression summary:   
+
+```{r}
+summary(b)
+```
+
+The variances of the random effect for subject, linear year, and quadratic year are all greater then 0. For fixed effect, physical activity level is significantly associated with year in a linear (p < 0.001) and a quadratic (p < 0.001) trend controlling for treatment. At a 0.05 significance level, intervention does not have a significant effect on physical activity over time (p = 0.321). Moreover, intervention does not have a significant impact on the growth of viral load over time neither in a linear trend (p = 0.479) nor in a quadratic trend (p = 0.834).       
+
+
+## Conclusion   
+
+Linear mixed effect model with quadratic trend in time was conducted to investigate if the interventions are differentially changing the physical activity levels. It appears at 0.05 significantce level, we do not have enoulgh evidence to support that the interventions have a significant effect on physical activity over time (p = 0.321). Besides, it does not have a significant impact on the growth of viral load over time neither in a linear trend (p = 0.479) nor in a quadratic trend (p = 0.834).       
+
+
