@@ -1,0 +1,175 @@
+---
+title: "Final"
+author: "Tianran Zhang"
+date: "7/23/2020"
+output: 
+  html_document:
+    theme: readable
+    toc_float: true
+    toc: yes
+    toc_depth: 5
+    code_folding: hide
+  editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+
+library(janitor)
+library(ggplot2)
+
+library(glmmTMB)
+library(ordinal)
+
+library(gee)
+``` 
+
+# Project 1
+## Data Description {.tabset .tabset-fade .tabset-pills}
+We are studying a rare tumor by using mice as a model organism. Each mouse was exposed to a carcinogen. Those that developed the tumor were followed for four equidistant time points. The dataset contains thebaseline age and the baseline L Index. Additionally, ghrelin level, which is hypothesized to have an effect in the growth rate, was recorded in each time point. The goal is to identify the factors associated with tumor growth.      
+Correct the data type and take a look at the data structure: 
+```{r}
+dat1 <- read.csv("MiceTumorP.csv")
+dat1 <- clean_names(dat1)
+
+sum(is.na(dat1))
+dat1$mouse <- as.factor(dat1$mouse)
+dat1$time <- as.factor(dat1$time)
+str(dat1)
+```
+
+There is no missing value.    
+
+## Description of model building
+I will perform an appropriate analysis to investgate if ghrelin, baseline age and baseline L Index have an effect on tumor growth.        
+First, take a look at the tumor volume growth over time.   
+```{r, fig.width=4, fig.height=3, fig.pos="center"}
+ggplot(dat1, aes(x = time, y = tumor_volume,
+                 group = mouse, col = mouse)) +
+  geom_line() +  # individual trajectory
+  geom_smooth(aes(group = 1), method = "lm") +  # overall trend line
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+
+The plot shows no obvious trend for tumor growth over time. The outcome tumor volume is a continuous variable and there are 4 time points. Next, check the normality of tumor volume:
+
+```{r, fig.width=10, fig.height=4}
+par(mfrow = c(1, 2))
+qqnorm(dat1$tumor_volume)
+qqline(dat1$tumor_volume)
+
+hist(dat1$tumor_volume, xlab = "Tumor Volume", main = "Distribution of Tumor Volume")
+```
+
+The qq plot shows that tumor volume is not normal, and the histogram plot shows that the distribution of tumor volume is right skewed with a long right tail. Thus I will perform a Generalized Estimating Equation (GEE) for longitudinal data analysis with random intercept and slop. Ghrelin, baseline age and baseline L index are fixed effects while mouse is a random effect. 
+$$Y_{ij} = \alpha + \delta t_{ij} + \beta ghrelin_{ij} + \gamma age_{ij} + \phi li_{ij}$$ 
+
+$Y_{ij}$: The tumor volumn for mouse i in time j;    
+$\alpha$: Fixed intercept;    
+$\delta$: Main effect of continuous time;       
+$\beta$: Main effect of ghrelin;     
+$\gamma$: Main effect of age;     
+$\phi$: Main effect of L index.      
+
+
+## Description of analyses  
+```{r}
+dat1$time <- as.numeric(dat1$time)
+a <- gee(tumor_volume ~  time + ghrelin + age_months + li,
+          id = mouse, 
+          data = dat1, 
+          family = gaussian)
+```
+
+
+```{r}
+summary(a)
+2*pnorm(abs(coef(summary(a))[,5]), lower.tail = FALSE)
+```
+
+The regression summary shows that tumor volume significantly changed over time (p < 0.001). However, we do not have evidence to support that ghrelin(p = 0.225), baseline age(p = 0.225) or baseline L index(p = 0.589) is significnatly associated with tumor volume controlling for other covariates.     
+
+## Conclusions
+Generalized Estimating Equation (GEE) was conducted to investigate whether ghrelin, baseline age and baseline L Index have impacts on tumor growth. At a 0.05 significance level, there is no evidence that ghrelin, baseline age and L index are significantly associated with tumor volume over time with p-values = 0.225, 0.588, and 0.225, respectively.        
+
+# Project 2
+## Data Description
+I am comparing two treatments for treating anxiety attacks in anxiety disorder patients. The patients were randomly divided into two groups. Each group received one of the treatments as they start experiencing an anxiety attack. They were observed for four equidistant time points, and they were asked to rate (in a scale of 1-5) their anxiety level at each time point. (The first time point is the baseline.) A newly discover biomarker, HLM4, is also deemed to influence the anxiety level, and needs to be taken into account.     
+Correct the data type and take a look at the data structure:
+
+```{r}
+dat2 <- read.csv("AnxietyRating.csv")
+dat2 <- clean_names(dat2)
+
+sum(is.na(dat2))
+dat2$patient <- as.factor(dat2$patient)
+dat2$treatment <- as.factor(dat2$treatment)
+dat2$response <- as.factor(dat2$response)
+str(dat2)
+```
+There is no missing value.   
+
+## Description of model building
+I will perform an appropriate analysis to investigate if the two treatments have significantly different effects in changing the anxiety level over time.
+
+First take a look at the plot: 
+
+```{r, fig.width=5, fig.height=3}
+ggplot(dat2, aes(x = time, y = response,
+                 group = patient, col = patient)) +
+  geom_line() +  # individual trajectory
+ # geom_smooth(aes(group = 1), method = "lm") +  # overall trend line
+  #facet_wrap(~treatment) + 
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+
+The plot shows that there is no linear or quadradic trend in response over time. We have 4 time points and the response variable is ordinal with 5 levels. So I will perform a GLMM for LDA with an ordinal outcome. Treatment and hlm4 are fixed effects and patient is a random effect. I will also consider the interaction term between treatment and time to investigate if the two treatments have significantly different effects in changing the anxiety level over time.     
+
+$$log(\frac{Pr(Y_{ijk}\ge m)}{Pr(Y_{ijk}< m)}) = (\alpha + \delta t_{ijk}) +  (\alpha_{i(j)} + d_{i(j)} t_{ijk}) + \beta 1_{[Treatment]i} + \gamma t_{ijk}1_{ [Treatment]i} +\theta hlm4_{ijk}$$ 
+
+$Y_{ijk}$: The anxiety level for patient j in treatment group i at time k;    
+$\alpha$: Fixed intercept;    
+$\delta$: Fixed slope;    
+$\alpha_{i(j)}$: Random subject-specific intercept;    
+$d_{i(j)}$: Random subject-specific slope;    
+$\beta$: Main effect of treatment B;     
+$\gamma$: Interaction effect of treatment B and time;   
+$\theta$: Main effect of hlm4.     
+Assume "Proportional Odds Assumption". i.e. the model does not vary by m = 2, 3, 4, 5.      
+Check the model result:  
+```{r}
+b <- clmm(response ~ time * treatment + hlm4 + (1 + time|patient), data = dat2)
+summary(b) 
+```
+
+The correlation between two random effect is -1. It appears there are too many rsndom terms. Thus I updated the model by removing the random slope(i.e., the new model only contains a random intercept):    
+
+$$log(\frac{Pr(Y_{ijk}\ge m)}{Pr(Y_{ijk}< m)}) = (\alpha + \delta t_{ijk}) +  (\alpha_{i(j)}) + \beta 1_{[Treatment]i} + \gamma t_{ijk}1_{ [Treatment]i} +\theta hlm4_{ijk}$$ 
+
+$Y_{ijk}$: The anxiety level for patient j in treatment group i at time k;    
+$\alpha$: Fixed intercept;    
+$\delta$: Fixed slope for time;    
+$\alpha_{i(j)}$: Random subject-specific intercept;    
+$\beta$: Main effect of treatment B;     
+$\gamma$: Interaction effect of treatment B and time;   
+$\theta$: Main effect of hlm4.     
+Assume "Proportional Odds Assumption". i.e. the model does not vary by m = 2, 3, 4, 5.       
+
+## Description of analyses   
+
+```{r}
+c <- clmm(response ~ time * treatment + hlm4 + (1|patient), data = dat2)
+summary(c) 
+```
+
+The variance of random effect is 0.042, which means the random effect exits. There is evidence that patients' anxiety level significantly changed over time controlling for other covariates (p = 0.0343). However, there is no sufficient evidence to support that patients' anxiety level is associsted with treatments (p = 0.445), or hlm4 (p = 0.253) controlling for other covariates. Plus, we do not have evidence to suggest that the two treatments have significantly different effects in changing the anxiety level over time (p = 0.548).   
+
+
+## Conclusions
+Generalized Linear Mixed Model (GLMM) for LDA with ordinal outcome and random intercept was conducted to investigate whether pastient anxiety level change by treatment over time. At a 0.05 significance level, we do not have evidence to conclude that the two treatments have significantly different effects in changing the anxiety level over time (p = 0.548). 
+

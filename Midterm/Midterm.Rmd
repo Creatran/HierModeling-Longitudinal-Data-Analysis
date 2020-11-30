@@ -1,0 +1,79 @@
+---
+title: "Midterm"
+author: "Tianran Zhang"
+date: "6/10/2020"
+output: 
+  html_document:
+    code_folding: hide
+    theme: readable
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bayesmeta)
+library(knitr)
+library(kableExtra)
+```
+
+## Background
+One of the treatments for bladder cancer is the surgical removal of the bladder tumor. It can be performed manually by a surgeon, or with a robotic surgical tool, supervised by a surgeon. Robotic removal is much faster, leading to fewer surgical complications.      
+Three studies were independently conducted by three groups of medical researchers to evaluate the effect of robotic surgical tool on operation time. Each group estimated the average time saved by use of the robotic surgical tool, after appropriate adjustments are made for other factors.    
+
+## Meta Analysis   
+Taking into account that robotic surgeries are much faster, we have prior information that $\mu$ is greater than 0. Since the average time saved (hours) is around 0.9, so I selected the $\mu$ with prior distribution of Normal(0.9, 1)
+
+```{r}
+n_samples <- c(49, 56, 32)
+beta_mean <- c(0.35, 1.20, 0.91)
+beta_sd <- c(0.18, 0.51, 0.47)
+
+ma <- bayesmeta(beta_mean, 
+                beta_sd, 
+                mu.prior.mean=1, 
+                mu.prior.sd=1, 
+                tau.prior=function(x){dhalfnormal(x,scale=0.5)})
+
+# output the meta analysis results
+print(ma)
+```
+
+The mata analysis results displayed two parts for the estimation of tau and mu:   
+
+* the ML and MAP estimates:      
+The “classical” maximum likelihood (ML) parameter estimates, as well as the maximum-a-posteriori (MAP) estimates for μ (effect) and τ.There are “joint” estimates (based on the joint likelihood or joint posterior density), as well as “marginal” estimates (based on marginal likelihood or posterior density).
+
+* Marginal posterior summary:    
+Lists characteristics of the marginal posterior distributions of τ and μ(effect).
+
+The characters of overall estimate for average time saved by use of robotic surgical tool is shown in the bellow table:
+```{r}
+ma$summary %>%
+  kable()%>%
+  kable_styling()
+```
+
+Based on the above information, I chose the median of the marginal posterior density for estimation. The overall estimate for average time saved by use of robotic surgical tool is 0.63 with a standard error of 0.31.  
+
+```{r}
+# 95% Credible Interval 
+ma$post.interval(mu = 0.95) 
+```
+
+The 95% shortest credible interval for $\mu$ is (0.087, 1.326).   
+
+```{r}
+par(mfrow = c(1, 2))
+plot(ma, which = 3:4, main = "Marginal posterior distribution")
+```
+
+The above two plots show the marginal posterior densities of effect µ and heterogeneity τ. The 95% credible intervals are indicated with a darker shading, and the posterior median is shown by a vertical line. 
+
+
+```{r}
+plot(ma, which = 2, main = "Joint posterior distribution")
+```
+
+This plot shows the joint posterior density of heterogeneity τ and effect µ, with darker shading corresponding to higher probability density. The red lines indicate (approximate) 2D credible regions. The green lines show marginal posterior medians and 95% credible intervals. The blue lines show the conditional posterior mean effect as a function of the heterogeneity τ along with a 95% interval based on its conditional standard error. 
